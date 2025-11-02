@@ -1,16 +1,21 @@
-# Use an official Node.js runtime as a parent image
+# Use Bun image
 FROM oven/bun:1
 
-# Set the working directory in the container
 WORKDIR /usr/src/app
 
-# Copy the rest of the application code
+# Copy project files
 COPY . .
 
+# Install dependencies
 RUN bun install
 
-# Expose the port the app runs on
+# Build the TypeScript source
+# (package.json'daki "build" script'ini çalıştırır)
+RUN bun run build
+
+# Expose your app port
 EXPOSE 3000
 
-# Define the command to run the app
-ENTRYPOINT bun start
+# Run the compiled app
+# (package.json'daki "start" script'ini çalıştırır)
+ENTRYPOINT ["bun", "start"]
