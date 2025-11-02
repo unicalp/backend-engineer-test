@@ -1,9 +1,35 @@
 import { test, expect, describe } from "bun:test";
 
-// Sunucumuzun adresini tanımlayalım
+// Define the server address
 const baseURL = "http://localhost:3000";
 
-// Testlerimizde kullanacağımız doğru hash'lere sahip bloklar
+// --- Helper Functions ---
+
+// Helper to post a block
+const postBlock = (block: any) => {
+  return fetch(`${baseURL}/blocks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(block),
+  });
+};
+
+// Helper to get a balance
+const getBalance = async (address: string) => {
+  const res = await fetch(`${baseURL}/balance/${address}`);
+  const data = await res.json();
+  return data.balance;
+};
+
+// Helper to post a rollback
+const postRollback = (height: number) => {
+  return fetch(`${baseURL}/rollback?height=${height}`, {
+    method: "POST",
+  });
+};
+
+// --- Test Data (Blocks with correct hashes) ---
+
 const block1 = {
   id: "d1582b9e2cac15e170c39ef2e85855ffd7e6a820550a8ca16a2f016d366503dc",
   height: 1,
@@ -30,93 +56,67 @@ const block3 = {
   }]
 };
 
-// Ana test senaryomuz
+// --- Main Test Suite ---
+
 describe("Blockchain Indexer API", () => {
 
-  // Testlere başlamadan önce, temiz bir veritabanı olduğundan emin olmak için
-  // veritabanını sıfırlamamız GEREKİR.
-  // Lütfen bu testi çalıştırmadan önce terminalde
-  // 'docker-compose down -v && docker-compose up -d --build' komutunu çalıştırın.
+  // IMPORTANT: Before running this test, you must reset the database
+  // to a clean state by running:
+  // 'docker-compose down -v && docker-compose up -d --build'
+  // We add this test to remind you.
+  test("Server is ready for testing", async () => {
+    const res = await getBalance("addr1");
+    expect(res).toBe(0); // On a clean DB, balance should be 0
+  });
 
   test("1. POST /blocks - Should add Block 1", async () => {
-    const res = await fetch(`${baseURL}/blocks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(block1),
-    });
+    const res = await postBlock(block1);
     const data = await res.json();
-
-    expect(res.status).toBe(201); // 201 Created olmalı
+    expect(res.status).toBe(201); // Should be 201 Created
     expect(data.message).toBe("Block 1 added successfully");
   });
 
   test("2. POST /blocks - Should add Block 2", async () => {
-    const res = await fetch(`${baseURL}/blocks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(block2),
-    });
+    const res = await postBlock(block2);
     const data = await res.json();
-
     expect(res.status).toBe(201);
     expect(data.message).toBe("Block 2 added successfully");
   });
 
   test("3. POST /blocks - Should add Block 3", async () => {
-    const res = await fetch(`${baseURL}/blocks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(block3),
-    });
+    const res = await postBlock(block3);
     const data = await res.json();
-
     expect(res.status).toBe(201);
     expect(data.message).toBe("Block 3 added successfully");
   });
 
   test("4. GET /balance - Should get correct balances after 3 blocks", async () => {
-    let res = await fetch(`${baseURL}/balance/addr3`);
-    let data = await res.json();
-    expect(data.balance).toBe(0); // Blok 3'te harcandı
-
-    res = await fetch(`${baseURL}/balance/addr4`);
-    data = await res.json();
-    expect(data.balance).toBe(2); // Blok 3'te aldı
+    expect(await getBalance("addr1")).toBe(0); // Spent in Block 2
+    expect(await getBalance("addr2")).toBe(4); // Received in Block 2
+    expect(await getBalance("addr3")).toBe(0); // Received in Block 2, Spent in Block 3
+    expect(await getBalance("addr4")).toBe(2); // Received in Block 3
   });
 
   test("5. POST /rollback - Should roll back to height 2", async () => {
-    const res = await fetch(`${baseURL}/rollback?height=2`, {
-      method: "POST",
-    });
+    const res = await postRollback(2);
     const data = await res.json();
-
-    expect(res.status).toBe(200); // 200 OK olmalı
+    expect(res.status).toBe(200); // Should be 200 OK
     expect(data.message).toBe("Successfully rolled back to height 2");
   });
 
   test("6. GET /balance - Should have rolled-back balances", async () => {
-    // Blok 3'ün etkileri geri alınmış olmalı
-    let res = await fetch(`${baseURL}/balance/addr4`);
-    let data = await res.json();
-    expect(data.balance).toBe(0); // addr4 artık yok
-
-    res = await fetch(`${baseURL}/balance/addr3`);
-    data = await res.json();
-    expect(data.balance).toBe(6); // addr3'ün bakiyesi geri yüklendi
+    // Block 3's effects should be undone
+    expect(await getBalance("addr4")).toBe(0); // addr4 should no longer exist
+    expect(await getBalance("addr3")).toBe(6); // addr3's balance should be restored
   });
 
   test("7. POST /blocks - Should fail to add Block 2 again (invalid height)", async () => {
-    // Şu anda yükseklik 2'deyiz. Blok 2'yi tekrar eklemeye çalışmak
-    // "Invalid height. Expected 3..." hatası vermeli.
-    const res = await fetch(`${baseURL}/blocks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(block2),
-    });
-
-    expect(res.status).toBe(400); // 400 Bad Request olmalı
+    // We are currently at height 2. Trying to add Block 2 again
+    // should fail with "Invalid height. Expected 3..."
+    const res = await postBlock(block2);
+    expect(res.status).toBe(400); // Should be 400 Bad Request
     const data = await res.json();
-    expect(data.error).toContain("Invalid height");
+    expect(data.error).toContain("Invalid height. Expected 3");
   });
 
 });
