@@ -1,19 +1,14 @@
-import { Pool } from 'pg'; 
+import { Pool } from 'pg';
 
-console.log(" DATABASE_URL inside db/index.ts:", process.env.DATABASE_URL);
-// This is now smart. By leaving the constructor empty,
-// it will AUTOMATICALLY use the DATABASE_URL from your
-// docker-compose.yml file. This fixes the password error.
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-// We create a simple helper object to query the DB
 export const sql = {
   query: (text: string, params: any[] = []) => pool.query(text, params),
 };
 
-// This is the REAL schema for the assessment
+
 export async function setupDatabase() {
   try {
     await sql.query(`
